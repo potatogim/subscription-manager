@@ -18,7 +18,10 @@
 This is module implementing detector and metadata collector of virtual machine running on AWS
 """
 
+
+
 from rhsmlib.cloud.detector import CloudDetector
+from rhsmlib.cloud.collector import CloudCollector
 
 
 class AWSCloudDetector(CloudDetector):
@@ -110,6 +113,102 @@ class AWSCloudDetector(CloudDetector):
             probability += 0.1
 
         return probability
+
+
+class AWSCloudCollector(CloudCollector):
+    """
+    Class implementing collecting metadata from AWS cloud provider
+    """
+
+    CLOUD_PROVIDER_ID = "aws"
+
+    CLOUD_PROVIDER_METADATA_URL = "http://169.254.169.254/latest/dynamic/instance-identity/document"
+
+    CLOUD_PROVIDER_METADATA_TYPE = "application/json"
+
+    CLOUD_PROVIDER_TOKEN_URL = "http://169.254.169.254/latest/api/token"
+
+    CLOUD_PROVIDER_TOKEN_TTL = 360  # value is in seconds
+
+    CLOUD_PROVIDER_SIGNATURE_URL = "http://169.254.169.254/latest/dynamic/instance-identity/signature"
+
+    CLOUD_PROVIDER_SIGNATURE_TYPE = "text/plain"
+
+    COLLECTOR_CONF_FILE = "/etc/rhsm/cloud/providers/aws.conf"
+
+    METADATA_CACHE_FILE = "/etc/"
+
+    def __init__(self):
+        """
+        Initialize instance of AWSCloudCollector
+        """
+        super(AWSCloudCollector, self).__init__()
+        self.token = None
+
+    def _get_collector_configuration_from_file(self):
+        """
+        Get configuration of instance from ini file
+        :return: None
+        """
+        pass
+
+    def _get_metadata_from_cache(self):
+        """
+        Try to get metadata from cache
+        :return: None
+        """
+        pass
+
+    def _get_metadata_from_server(self):
+        """
+        Try to get metadata from server as is described in this document:
+
+        https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
+
+        It is possible to use two versions. We will try to use version IMDSv1 first (this version requires
+        only one HTTP request), when the usage of IMDSv1 is forbidden, then we will try to use IMDSv2 version.
+        The version requires two requests (get session TOKEN and then get own metadata using token)
+        :return: None
+        """
+
+
+    def _get_signature_from_cache_file(self):
+        """
+        Try to get signature from cache file
+        :return: None
+        """
+        pass
+
+    def _get_signature_from_server(self):
+        """
+        Try to get signature from server as is described in this document:
+
+        https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/verify-signature.html
+
+        AWS provides several versions signatures (PKCS7, base64-encoded and RSA-2048). We will use
+        the base64-encoded one, because it is easier to send it as part of JSON document. It is
+        possible to get signature using IMDSv1 and IMDSv2. We use same approach of obtaining
+        signature as we use, when we try to obtain metadata. We try use IMDSv1 first, when not
+        possible then we try to use IMDSv2.
+        :return: None
+        """
+        pass
+
+    def get_metadata(self):
+        """
+        Try to get metadata from cache file first. When cache file is not available, then try to
+        get metadata from server.
+        :return:
+        """
+        pass
+
+    def get_signature(self):
+        """
+        Try to get signature from cache file first. When cache file is not available, then try to
+        get signature from server.
+        :return: None
+        """
+        pass
 
 
 # Some temporary smoke testing code. You can test this module using:

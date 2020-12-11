@@ -42,7 +42,7 @@ class CloudCollector(object):
     CLOUD_PROVIDER_METADATA_URL = None
 
     # Type of metadata document returned by server
-    # (e.g. json, xml)
+    # (e.g. "application/json", "text/xml")
     CLOUD_PROVIDER_METADATA_TYPE = None
 
     # Default value of server URL providing signature of metadata
@@ -50,7 +50,7 @@ class CloudCollector(object):
     CLOUD_PROVIDER_SIGNATURE_URL = None
 
     # Type of signature document returned by server
-    # (e.g. json, xml, pem)
+    # (e.g. "application/json", "text/xml", "text/pem")
     CLOUD_PROVIDER_SIGNATURE_TYPE = None
 
     # Default value of path to cache file holding metadata
