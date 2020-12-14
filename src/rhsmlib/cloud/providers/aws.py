@@ -219,19 +219,11 @@ class AWSCloudCollector(CloudCollector):
             token = self._get_token_from_server()
         return token
 
-    def _get_metadata_from_server(self) -> Union[str, None]:
+    def _get_metadata_from_server_imds_v1(self) -> Union[str, None]:
         """
-        Try to get metadata from server as is described in this document:
-
-        https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
-
-        It is possible to use two versions. We will try to use version IMDSv1 first (this version requires
-        only one HTTP request), when the usage of IMDSv1 is forbidden, then we will try to use IMDSv2 version.
-        The version requires two requests (get session TOKEN and then get own metadata using token)
+        Try to get metadata from server using IMDSv1
         :return: String with metadata or None
         """
-
-        # First try to get metadata using IMDSv1
         try:
             response = requests.get(self.CLOUD_PROVIDER_METADATA_URL)
         except requests.ConnectionError as err:
@@ -242,7 +234,11 @@ class AWSCloudCollector(CloudCollector):
             else:
                 log.debug(f'Unable to get AWS metadata using IMDSv1: {response.status_code}')
 
-        # When it wasn't possible to get metadata using IMDSv1, then try to get metadata using IMDSv2
+    def _get_metadata_from_server_imds_v2(self) -> Union[str, None]:
+        """
+        Try to get metadata from server using IMDSv2
+        :return: String with metadata or None
+        """
         token = self._get_token()
         if token is None:
             return None
@@ -261,6 +257,29 @@ class AWSCloudCollector(CloudCollector):
             else:
                 log.error(f'Unable to get AWS metadata using IMDSv2: {response.status_code}')
         return None
+
+    def _get_metadata_from_server(self) -> Union[str, None]:
+        """
+        Try to get metadata from server as is described in this document:
+
+        https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
+
+        It is possible to use two versions. We will try to use version IMDSv1 first (this version requires
+        only one HTTP request), when the usage of IMDSv1 is forbidden, then we will try to use IMDSv2 version.
+        The version requires two requests (get session TOKEN and then get own metadata using token)
+        :return: String with metadata or None
+        """
+
+        # First try to get metadata using IMDSv1
+        metadata = self._get_metadata_from_server_imds_v1()
+
+        if metadata is not None:
+            return metadata
+
+        # When it wasn't possible to get metadata using IMDSv1, then try to get metadata using IMDSv2
+        return self._get_metadata_from_server_imds_v2()
+
+
 
     def _get_signature_from_cache_file(self):
         """
@@ -306,9 +325,11 @@ class AWSCloudCollector(CloudCollector):
         pass
 
 
-# Some temporary smoke testing code. You can test this module using:
-# sudo PYTHONPATH=./src:./syspurse/src python3 -m rhsmlib.cloud.providers.aws
-if __name__ == '__main__':
+def _smoke_tests():
+    """
+    WIP function for smoke testing on AWS cloud
+    :return:
+    """
     # Gather only information about hardware and virtualization
     from rhsmlib.facts.host_collector import HostCollector
     from rhsmlib.facts.hwprobe import HardwareCollector
@@ -326,3 +347,11 @@ if __name__ == '__main__':
         _metadata_collector = AWSCloudCollector()
         _metadata = _metadata_collector.get_metadata()
         print(f'>>> debug <<< cloud metadata: {_metadata}')
+        _metadata_v2 = _metadata_collector._get_metadata_from_server_imds_v2()
+        print(f'>>> debug <<< cloud metadata: {_metadata_v2}')
+
+
+# Some temporary smoke testing code. You can test this module using:
+# sudo PYTHONPATH=./src:./syspurse/src python3 -m rhsmlib.cloud.providers.aws
+if __name__ == '__main__':
+    _smoke_tests()
