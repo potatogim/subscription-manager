@@ -165,7 +165,7 @@ class AWSCloudCollector(CloudCollector):
 
     def _get_collector_configuration_from_file(self):
         """
-        Get configuration of instance from ini file
+        Get configuration of instance from ini file.
         :return: None
         """
         pass
@@ -372,14 +372,38 @@ class AWSCloudCollector(CloudCollector):
         # When it wasn't possible to get metadata using IMDSv1, then try to get metadata using IMDSv2
         return self._get_metadata_from_server_imds_v2()
 
-    def _get_signature_from_cache_file(self):
+    def _get_signature_from_cache_file(self) -> Union[str, None]:
         """
         Try to get signature from cache file
         :return: None
         """
         return None
 
-    def _get_signature_from_server(self):
+    def _get_signature_from_server_imds_v1(self) -> Union[str, None]:
+        """
+        Try to get signature using IMDSv1
+        :return: String of signature or None, when it wasn't possible to get signature from server
+        """
+        log.debug(f'Trying to get signature from {self.CLOUD_PROVIDER_SIGNATURE_URL} using IMDSv1')
+
+        try:
+            response = requests.get(self.CLOUD_PROVIDER_SIGNATURE_URL)
+        except requests.ConnectionError as err:
+            log.debug(f'Unable to get AWS signature using IMDSv1: {err}')
+        else:
+            if response.status_code == 200:
+                return response.text
+            else:
+                log.debug(f'Unable to get AWS signature using IMDSv1: {response.status_code}')
+
+    def _get_signature_from_server_imds_v2(self) -> Union[str, None]:
+        """
+        Try to get signature using IMDSv1
+        :return: String of signature or None, when it wasn't possible to get signature from server
+        """
+        return None
+
+    def _get_signature_from_server(self) -> Union[str, None]:
         """
         Try to get signature from server as is described in this document:
 
@@ -392,7 +416,12 @@ class AWSCloudCollector(CloudCollector):
         possible then we try to use IMDSv2.
         :return: None
         """
-        pass
+        signature = self._get_signature_from_server_imds_v1()
+
+        if signature is not None:
+            return signature
+
+        return self._get_signature_from_server_imds_v2()
 
     def get_metadata(self) -> Union[str, None]:
         """
@@ -402,18 +431,23 @@ class AWSCloudCollector(CloudCollector):
         """
         metadata = self._get_metadata_from_cache()
 
-        if metadata is None:
-            metadata = self._get_metadata_from_server()
+        if metadata is not None:
+            return metadata
 
-        return metadata
+        return self._get_metadata_from_server()
 
-    def get_signature(self):
+    def get_signature(self) -> Union[str, None]:
         """
         Try to get signature from cache file first. When cache file is not available, then try to
         get signature from server.
         :return: None
         """
-        pass
+        signature = self._get_signature_from_cache_file()
+
+        if signature is None:
+            signature = self._get_signature_from_server_imds_v1()
+
+        return signature
 
 
 def _smoke_tests():
@@ -424,6 +458,16 @@ def _smoke_tests():
     # Gather only information about hardware and virtualization
     from rhsmlib.facts.host_collector import HostCollector
     from rhsmlib.facts.hwprobe import HardwareCollector
+    import sys
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
 
     _facts = {}
     _facts.update(HostCollector().get_all())
@@ -438,6 +482,9 @@ def _smoke_tests():
         _metadata_collector = AWSCloudCollector()
         _metadata = _metadata_collector.get_metadata()
         print(f'>>> debug <<< cloud metadata: {_metadata}')
+        _signature = _metadata_collector.get_signature()
+        print(f'>>> debug <<< metadata signature: {_signature}')
+
         _metadata_v2 = _metadata_collector._get_metadata_from_server_imds_v2()
         print(f'>>> debug <<< cloud metadata: {_metadata_v2}')
 
