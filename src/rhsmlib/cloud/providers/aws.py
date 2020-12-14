@@ -18,10 +18,16 @@
 This is module implementing detector and metadata collector of virtual machine running on AWS
 """
 
-
+import requests
+import logging
+import time
+from typing import Union
 
 from rhsmlib.cloud.detector import CloudDetector
 from rhsmlib.cloud.collector import CloudCollector
+
+
+log = logging.getLogger(__name__)
 
 
 class AWSCloudDetector(CloudDetector):
@@ -138,12 +144,19 @@ class AWSCloudCollector(CloudCollector):
 
     METADATA_CACHE_FILE = "/etc/"
 
+    HTTP_HEADERS = {
+        'user-agent': 'RHSM/1.0'
+    }
+
     def __init__(self):
         """
         Initialize instance of AWSCloudCollector
         """
         super(AWSCloudCollector, self).__init__()
-        self.token = None
+        # In-memory cache of token. The token is simple string
+        self._token = None
+        # Time, when token was received. The value is in seconds (unix time)
+        self._token_ctime = None
 
     def _get_collector_configuration_from_file(self):
         """
@@ -152,14 +165,61 @@ class AWSCloudCollector(CloudCollector):
         """
         pass
 
-    def _get_metadata_from_cache(self):
+    def _get_metadata_from_cache(self) -> Union[str, None]:
         """
         Try to get metadata from cache
         :return: None
         """
-        pass
+        return None
 
-    def _get_metadata_from_server(self):
+    def _is_cached_token_valid(self) -> bool:
+        """
+        Check if cached token is still valid
+        :return: True, when cached token is valid; otherwise return False
+        """
+        if self._token is None or self._token_ctime is None:
+            return False
+
+        current_time = time.time()
+        if self._token_ctime + self.CLOUD_PROVIDER_TOKEN_TTL < current_time:
+            return True
+        else:
+            return False
+
+    def _get_token_from_server(self) -> Union[str, None]:
+        """
+        Try to get token from server as it si described in this document
+        :return: String of token or None, when it wasn't possible to to get token
+        """
+        headers = {
+            'X-aws-ec2-metadata-token-ttl-seconds': self.CLOUD_PROVIDER_TOKEN_TTL,
+            **self.HTTP_HEADERS
+        }
+        try:
+            response = requests.get(self.CLOUD_PROVIDER_TOKEN_URL, headers=headers)
+        except requests.ConnectionError as err:
+            log.error(f'Unable to receive token from AWS: {err}')
+        else:
+            if response.status_code == 200:
+                self._token = response.text
+                self._token_ctime = time.time()
+                return response.text
+            else:
+                log.error(f'Unable to receive token from AWS code: {response.status_code}')
+        return None
+
+    def _get_token(self) -> Union[str, None]:
+        """
+        Try to get token from in-memory cache of from AWS server
+        :return: String with token or None
+        """
+        if self._is_cached_token_valid() is True:
+            token = self._token
+        else:
+            token = self._get_token_from_server()
+        return token
+
+    def _get_metadata_from_server(self) -> Union[str, None]:
         """
         Try to get metadata from server as is described in this document:
 
@@ -168,16 +228,46 @@ class AWSCloudCollector(CloudCollector):
         It is possible to use two versions. We will try to use version IMDSv1 first (this version requires
         only one HTTP request), when the usage of IMDSv1 is forbidden, then we will try to use IMDSv2 version.
         The version requires two requests (get session TOKEN and then get own metadata using token)
-        :return: None
+        :return: String with metadata or None
         """
 
+        # First try to get metadata using IMDSv1
+        try:
+            response = requests.get(self.CLOUD_PROVIDER_METADATA_URL)
+        except requests.ConnectionError as err:
+            log.debug(f'Unable to get AWS metadata using IMDSv1: {err}')
+        else:
+            if response.status_code == 200:
+                return response.text
+            else:
+                log.debug(f'Unable to get AWS metadata using IMDSv1: {response.status_code}')
+
+        # When it wasn't possible to get metadata using IMDSv1, then try to get metadata using IMDSv2
+        token = self._get_token()
+        if token is None:
+            return None
+
+        headers = {
+            'X-aws-ec2-metadata-token': token,
+            **self.HTTP_HEADERS
+        }
+        try:
+            response = requests.get(self.CLOUD_PROVIDER_METADATA_URL, headers=headers)
+        except requests.ConnectionError as err:
+            log.error(f'Unable to get AWS metadata using IMDSv2: {err}')
+        else:
+            if response.status_code == 200:
+                return response.text
+            else:
+                log.error(f'Unable to get AWS metadata using IMDSv2: {response.status_code}')
+        return None
 
     def _get_signature_from_cache_file(self):
         """
         Try to get signature from cache file
         :return: None
         """
-        pass
+        return None
 
     def _get_signature_from_server(self):
         """
@@ -194,13 +284,18 @@ class AWSCloudCollector(CloudCollector):
         """
         pass
 
-    def get_metadata(self):
+    def get_metadata(self) -> Union[str, None]:
         """
         Try to get metadata from cache file first. When cache file is not available, then try to
         get metadata from server.
-        :return:
+        :return: String with metadata or None
         """
-        pass
+        metadata = self._get_metadata_from_cache()
+
+        if metadata is None:
+            metadata = self._get_metadata_from_server()
+
+        return metadata
 
     def get_signature(self):
         """
@@ -217,10 +312,17 @@ if __name__ == '__main__':
     # Gather only information about hardware and virtualization
     from rhsmlib.facts.host_collector import HostCollector
     from rhsmlib.facts.hwprobe import HardwareCollector
+
     _facts = {}
     _facts.update(HostCollector().get_all())
     _facts.update(HardwareCollector().get_all())
     _aws_cloud_detector = AWSCloudDetector(_facts)
     _result = _aws_cloud_detector.is_running_on_cloud()
     _probability = _aws_cloud_detector.is_likely_running_on_cloud()
-    print('>>> debug <<< result: %s, probability: %6.3f' % (_result, _probability))
+    print(f'>>> debug <<< cloud provider: {_result}, probability: {_probability}')
+
+    if _result is True:
+        _metadata = None
+        _metadata_collector = AWSCloudCollector()
+        _metadata = _metadata_collector.get_metadata()
+        print(f'>>> debug <<< cloud metadata: {_metadata}')
