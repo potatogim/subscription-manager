@@ -21,6 +21,9 @@ This is module implementing detector and metadata collector of virtual machine r
 import requests
 import logging
 import time
+import json
+import os
+
 from typing import Union
 
 from rhsmlib.cloud.detector import CloudDetector
@@ -134,7 +137,7 @@ class AWSCloudCollector(CloudCollector):
 
     CLOUD_PROVIDER_TOKEN_URL = "http://169.254.169.254/latest/api/token"
 
-    CLOUD_PROVIDER_TOKEN_TTL = 360  # value is in seconds
+    CLOUD_PROVIDER_TOKEN_TTL = 360  # the value is in seconds
 
     CLOUD_PROVIDER_SIGNATURE_URL = "http://169.254.169.254/latest/dynamic/instance-identity/signature"
 
@@ -142,7 +145,9 @@ class AWSCloudCollector(CloudCollector):
 
     COLLECTOR_CONF_FILE = "/etc/rhsm/cloud/providers/aws.conf"
 
-    METADATA_CACHE_FILE = "/etc/"
+    METADATA_CACHE_FILE = "/var/lib/rhsm/cache/aws_metadata.json"
+
+    TOKEN_CACHE_FILE = "/var/lib/rhsm/cache/aws_token.json"
 
     HTTP_HEADERS = {
         'user-agent': 'RHSM/1.0'
@@ -172,7 +177,7 @@ class AWSCloudCollector(CloudCollector):
         """
         return None
 
-    def _is_cached_token_valid(self) -> bool:
+    def _is_in_memory_cached_token_valid(self) -> bool:
         """
         Check if cached token is still valid
         :return: True, when cached token is valid; otherwise return False
@@ -181,28 +186,97 @@ class AWSCloudCollector(CloudCollector):
             return False
 
         current_time = time.time()
-        if self._token_ctime + self.CLOUD_PROVIDER_TOKEN_TTL < current_time:
+        if current_time < self._token_ctime + self.CLOUD_PROVIDER_TOKEN_TTL:
             return True
         else:
             return False
 
+    def _write_token_to_cache_file(self) -> None:
+        """
+        Try to write token to cache file
+        :return: None
+        """
+        if self._token is None:
+            return None
+
+        token_cache_content = {
+            "ctime": str(self._token_ctime),
+            "token": self._token
+        }
+
+        with open(self.TOKEN_CACHE_FILE, "w") as token_cache_file:
+            json.dump(token_cache_content, token_cache_file)
+
+    def _get_token_from_cache_file(self) -> Union[str, None]:
+        """
+        Try to get token from cache file. Cache file is JSON file with following structure:
+
+        {
+          "ctime": "1607949565.9036307",
+          "token": "ABCDEFGHy0hY_y8D7e95IIx7aP2bmnzddz0tIV56yZY9oK00F8GUPQ=="
+        }
+
+        The cache file can be read only by owner.
+        :return: String with token or None, when it possible to load token from cache file
+        """
+        if not os.path.exists(self.TOKEN_CACHE_FILE):
+            return None
+
+        with open(self.TOKEN_CACHE_FILE, "r") as token_cache_file:
+            try:
+                cache_file_content = token_cache_file.read()
+            except OSError as err:
+                log.error('Unable to load token cache file')
+                return None
+        try:
+            cache = json.loads(cache_file_content)
+        except json.JSONDecodeError as err:
+            log.error(f'Unable to parse token cache file: {self.TOKEN_CACHE_FILE}: {err}')
+            return None
+
+        required_keys = ['ctime', 'token']
+        for key in required_keys:
+            if key not in cache:
+                log.error(f'Required key: {key} is not included in token cache file: {self.TOKEN_CACHE_FILE}')
+                return None
+
+        try:
+            ctime = float(cache['ctime'])
+        except ValueError as err:
+            log.error(f'Wrong ctime value in {self.TOKEN_CACHE_FILE}')
+            return None
+        else:
+            self._token_ctime = ctime
+
+        if time.time() < ctime + self.CLOUD_PROVIDER_TOKEN_TTL:
+            return cache['token']
+        else:
+            return None
+
     def _get_token_from_server(self) -> Union[str, None]:
         """
-        Try to get token from server as it si described in this document
+        Try to get token from server as it si described in this document:
+
+        https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/configuring-instance-metadata-service.html
+
+        When token is received from server, then the token is also written
+        to cache file.
+
         :return: String of token or None, when it wasn't possible to to get token
         """
         headers = {
-            'X-aws-ec2-metadata-token-ttl-seconds': self.CLOUD_PROVIDER_TOKEN_TTL,
+            'X-aws-ec2-metadata-token-ttl-seconds': str(self.CLOUD_PROVIDER_TOKEN_TTL),
             **self.HTTP_HEADERS
         }
         try:
-            response = requests.get(self.CLOUD_PROVIDER_TOKEN_URL, headers=headers)
+            response = requests.put(self.CLOUD_PROVIDER_TOKEN_URL, headers=headers)
         except requests.ConnectionError as err:
             log.error(f'Unable to receive token from AWS: {err}')
         else:
             if response.status_code == 200:
                 self._token = response.text
                 self._token_ctime = time.time()
+                self._write_token_to_cache_file()
                 return response.text
             else:
                 log.error(f'Unable to receive token from AWS code: {response.status_code}')
@@ -210,13 +284,17 @@ class AWSCloudCollector(CloudCollector):
 
     def _get_token(self) -> Union[str, None]:
         """
-        Try to get token from in-memory cache of from AWS server
+        Try to get token from in-memory cache. When in-memory cache is not valid, then
+        try to get token from cache file and when cache file is not valid, then finally
+        try to get token from AWS server
         :return: String with token or None
         """
-        if self._is_cached_token_valid() is True:
+        if self._is_in_memory_cached_token_valid() is True:
             token = self._token
         else:
-            token = self._get_token_from_server()
+            token = self._get_token_from_cache_file()
+            if token is None:
+                token = self._get_token_from_server()
         return token
 
     def _get_metadata_from_server_imds_v1(self) -> Union[str, None]:
