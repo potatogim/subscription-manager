@@ -204,8 +204,13 @@ class AWSCloudCollector(CloudCollector):
             "token": self._token
         }
 
+        log.debug(f'Writing AWS token to file {self.TOKEN_CACHE_FILE}')
+
         with open(self.TOKEN_CACHE_FILE, "w") as token_cache_file:
             json.dump(token_cache_content, token_cache_file)
+
+        # Only owner (root) should be able to read the token file
+        os.chmod(self.TOKEN_CACHE_FILE, 0o600)
 
     def _get_token_from_cache_file(self) -> Union[str, None]:
         """
@@ -219,7 +224,10 @@ class AWSCloudCollector(CloudCollector):
         The cache file can be read only by owner.
         :return: String with token or None, when it possible to load token from cache file
         """
+        log.debug(f'Reading cache file with AWS token {self.TOKEN_CACHE_FILE}')
+
         if not os.path.exists(self.TOKEN_CACHE_FILE):
+            log.debug(f'Cache file {self.TOKEN_CACHE_FILE} with AWS token does not exist')
             return None
 
         with open(self.TOKEN_CACHE_FILE, "r") as token_cache_file:
@@ -251,6 +259,7 @@ class AWSCloudCollector(CloudCollector):
         if time.time() < ctime + self.CLOUD_PROVIDER_TOKEN_TTL:
             return cache['token']
         else:
+            log.debug(f'Cache file AWS token file {self.TOKEN_CACHE_FILE} timed out')
             return None
 
     def _get_token_from_server(self) -> Union[str, None]:
@@ -264,6 +273,8 @@ class AWSCloudCollector(CloudCollector):
 
         :return: String of token or None, when it wasn't possible to to get token
         """
+        log.debug(f'Requesting AWS token from {self.CLOUD_PROVIDER_TOKEN_URL}')
+
         headers = {
             'X-aws-ec2-metadata-token-ttl-seconds': str(self.CLOUD_PROVIDER_TOKEN_TTL),
             **self.HTTP_HEADERS
@@ -279,7 +290,7 @@ class AWSCloudCollector(CloudCollector):
                 self._write_token_to_cache_file()
                 return response.text
             else:
-                log.error(f'Unable to receive token from AWS code: {response.status_code}')
+                log.error(f'Unable to receive token from AWS; status code: {response.status_code}')
         return None
 
     def _get_token(self) -> Union[str, None]:
@@ -302,6 +313,8 @@ class AWSCloudCollector(CloudCollector):
         Try to get metadata from server using IMDSv1
         :return: String with metadata or None
         """
+        log.debug(f'Trying to get metadata from {self.CLOUD_PROVIDER_METADATA_URL} using IMDSv1')
+
         try:
             response = requests.get(self.CLOUD_PROVIDER_METADATA_URL)
         except requests.ConnectionError as err:
@@ -317,6 +330,8 @@ class AWSCloudCollector(CloudCollector):
         Try to get metadata from server using IMDSv2
         :return: String with metadata or None
         """
+        log.debug(f'Trying to get metadata from {self.CLOUD_PROVIDER_METADATA_URL} using IMDSv2')
+
         token = self._get_token()
         if token is None:
             return None
@@ -333,7 +348,7 @@ class AWSCloudCollector(CloudCollector):
             if response.status_code == 200:
                 return response.text
             else:
-                log.error(f'Unable to get AWS metadata using IMDSv2: {response.status_code}')
+                log.error(f'Unable to get AWS metadata using IMDSv2; status code: {response.status_code}')
         return None
 
     def _get_metadata_from_server(self) -> Union[str, None]:
@@ -356,8 +371,6 @@ class AWSCloudCollector(CloudCollector):
 
         # When it wasn't possible to get metadata using IMDSv1, then try to get metadata using IMDSv2
         return self._get_metadata_from_server_imds_v2()
-
-
 
     def _get_signature_from_cache_file(self):
         """
