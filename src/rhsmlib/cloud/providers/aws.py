@@ -398,9 +398,28 @@ class AWSCloudCollector(CloudCollector):
 
     def _get_signature_from_server_imds_v2(self) -> Union[str, None]:
         """
-        Try to get signature using IMDSv1
+        Try to get signature using IMDSv2
         :return: String of signature or None, when it wasn't possible to get signature from server
         """
+        log.debug(f'Trying to get signature from {self.CLOUD_PROVIDER_SIGNATURE_URL} using IMDSv2')
+
+        token = self._get_token()
+        if token is None:
+            return None
+
+        headers = {
+            'X-aws-ec2-metadata-token': token,
+            **self.HTTP_HEADERS
+        }
+        try:
+            response = requests.get(self.CLOUD_PROVIDER_SIGNATURE_URL, headers=headers)
+        except requests.ConnectionError as err:
+            log.error(f'Unable to get AWS signature using IMDSv2: {err}')
+        else:
+            if response.status_code == 200:
+                return response.text
+            else:
+                log.error(f'Unable to get AWS signature using IMDSv2; status code: {response.status_code}')
         return None
 
     def _get_signature_from_server(self) -> Union[str, None]:
@@ -445,7 +464,7 @@ class AWSCloudCollector(CloudCollector):
         signature = self._get_signature_from_cache_file()
 
         if signature is None:
-            signature = self._get_signature_from_server_imds_v1()
+            signature = self._get_signature_from_server()
 
         return signature
 
@@ -487,6 +506,8 @@ def _smoke_tests():
 
         _metadata_v2 = _metadata_collector._get_metadata_from_server_imds_v2()
         print(f'>>> debug <<< cloud metadata: {_metadata_v2}')
+        _signature_v2 = _metadata_collector._get_signature_from_server_imds_v2()
+        print(f'>>> debug <<< cloud signature: {_signature_v2}')
 
 
 # Some temporary smoke testing code. You can test this module using:
