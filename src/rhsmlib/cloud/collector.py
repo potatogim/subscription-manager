@@ -68,13 +68,6 @@ class CloudCollector(object):
         self.metadata = None
         self.signature = None
 
-    def _get_collector_configuration_from_file(self):
-        """
-        Get configuration of collector from json file
-        :return: True, when it was possible to load configuration file of collector
-        """
-        raise NotImplementedError
-
     def _get_metadata_from_cache(self):
         """
         Method for gathering metadata from cache file

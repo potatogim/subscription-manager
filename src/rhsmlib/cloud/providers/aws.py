@@ -163,13 +163,6 @@ class AWSCloudCollector(CloudCollector):
         # Time, when token was received. The value is in seconds (unix time)
         self._token_ctime = None
 
-    def _get_collector_configuration_from_file(self):
-        """
-        Get configuration of instance from ini file.
-        :return: None
-        """
-        pass
-
     def _get_metadata_from_cache(self) -> Union[str, None]:
         """
         Try to get metadata from cache
@@ -316,7 +309,7 @@ class AWSCloudCollector(CloudCollector):
         log.debug(f'Trying to get metadata from {self.CLOUD_PROVIDER_METADATA_URL} using IMDSv1')
 
         try:
-            response = requests.get(self.CLOUD_PROVIDER_METADATA_URL)
+            response = requests.get(self.CLOUD_PROVIDER_METADATA_URL, headers=self.HTTP_HEADERS)
         except requests.ConnectionError as err:
             log.debug(f'Unable to get AWS metadata using IMDSv1: {err}')
         else:
@@ -387,7 +380,7 @@ class AWSCloudCollector(CloudCollector):
         log.debug(f'Trying to get signature from {self.CLOUD_PROVIDER_SIGNATURE_URL} using IMDSv1')
 
         try:
-            response = requests.get(self.CLOUD_PROVIDER_SIGNATURE_URL)
+            response = requests.get(self.CLOUD_PROVIDER_SIGNATURE_URL, headers=self.HTTP_HEADERS)
         except requests.ConnectionError as err:
             log.debug(f'Unable to get AWS signature using IMDSv1: {err}')
         else:

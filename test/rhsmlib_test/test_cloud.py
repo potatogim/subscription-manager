@@ -244,6 +244,131 @@ class TestGCPDetector(unittest.TestCase):
         self.assertFalse(is_gcp_vm)
 
 
+AWS_METADATA = """
+{
+  "accountId" : "012345678900",
+  "architecture" : "x86_64",
+  "availabilityZone" : "eu-central-1b",
+  "billingProducts" : [ "bp-0124abcd" ],
+  "devpayProductCodes" : null,
+  "marketplaceProductCodes" : null,
+  "imageId" : "ami-0123456789abcdeff",
+  "instanceId" : "i-abcdef01234567890",
+  "instanceType" : "m5.large",
+  "kernelId" : null,
+  "pendingTime" : "2020-02-02T02:02:02Z",
+  "privateIp" : "12.34.56.78",
+  "ramdiskId" : null,
+  "region" : "eu-central-1",
+  "version" : "2017-09-30"
+}
+"""
+
+AWS_TOKEN = "ABCDEFGHIJKLMNOPQRSTVWXYZabcdefghijklmnopqrstvwxyz0123=="
+
+
+class TestAWSCollector(unittest.TestCase):
+    """
+    Test case for AWSCloudCollector
+    """
+
+    def setUp(self):
+        """
+        Patch communication with metadata provider
+        """
+        requests_patcher = patch('rhsmlib.cloud.providers.aws.requests')
+        self.requests_mock = requests_patcher.start()
+        self.addCleanup(requests_patcher.stop)
+
+    def test_get_metadata_from_server_imds_v1(self):
+        """
+        Test the case, when metadata are obtained from server using IMDSv1
+        """
+        mock_result = Mock()
+        mock_result.status_code = 200
+        mock_result.text = AWS_METADATA
+        self.requests_mock.get = Mock(return_value=mock_result)
+        aws_collector = aws.AWSCloudCollector()
+        # Mock that no metadata cache exists
+        aws_collector._get_metadata_from_cache = Mock(return_value=None)
+        metadata = aws_collector.get_metadata()
+        self.assertEqual(metadata, AWS_METADATA)
+
+    def test_get_metadata_from_server_imds2(self):
+        """
+        Test the case, when metadata are obtained from server using IMDSv2
+        """
+
+        def get_only_imds_v2_is_supported(url, headers, *args, **kwargs):
+            """
+            Mock result, when we try to get metadata using GET method against
+            AWS metadata provider. This mock is for the case, when only IMDSv2
+            is supported by instance.
+            :param url: URL
+            :param headers: HTTP headers
+            :param args: other position argument
+            :param kwargs: other keyed argument
+            :return: Mock with result
+            """
+            if url == aws.AWSCloudCollector.CLOUD_PROVIDER_METADATA_URL:
+                if 'X-aws-ec2-metadata-token' in headers.keys():
+                    if headers['X-aws-ec2-metadata-token'] == AWS_TOKEN:
+                        mock_result = Mock()
+                        mock_result.status_code = 200
+                        mock_result.text = AWS_METADATA
+                    else:
+                        mock_result = Mock()
+                        mock_result.status_code = 400
+                        mock_result.text = 'Error: Invalid metadata token provided'
+                else:
+                    mock_result = Mock()
+                    mock_result.status_code = 400
+                    mock_result.text = 'Error: IMDSv1 is not supported on this instance'
+            else:
+                mock_result = Mock()
+                mock_result.status_code = 400
+                mock_result.text = 'Error: Invalid URL'
+            return mock_result
+
+        def put_imds_v2_token(url, headers, *args, **kwargs):
+            """
+            Mock getting metadata token using PUT method against AWS metadata provider
+            :param url: URL
+            :param headers: HTTP header
+            :param args: other position arguments
+            :param kwargs: other keyed arguments
+            :return: Mock with response
+            """
+            if url == aws.AWSCloudCollector.CLOUD_PROVIDER_TOKEN_URL:
+                if 'X-aws-ec2-metadata-token-ttl-seconds' in headers:
+                    mock_result = Mock()
+                    mock_result.status_code = 200
+                    mock_result.text = AWS_TOKEN
+                else:
+                    mock_result = Mock()
+                    mock_result.status_code = 400
+                    mock_result.text = 'Error: TTL for token not specified'
+            else:
+                mock_result = Mock()
+                mock_result.status_code = 400
+                mock_result.text = 'Error: Invalid URL'
+            return mock_result
+
+        self.requests_mock.get = get_only_imds_v2_is_supported
+        self.requests_mock.put = put_imds_v2_token
+
+        aws_collector = aws.AWSCloudCollector()
+        # Mock that no metadata cache exists
+        aws_collector._get_metadata_from_cache = Mock(return_value=None)
+        # Mock that no token cache exists
+        aws_collector._get_token_from_cache_file = Mock(return_value=None)
+        # Mock writing token to cache file
+        aws_collector._write_token_to_cache_file = Mock()
+
+        metadata = aws_collector.get_metadata()
+        self.assertEqual(metadata, AWS_METADATA)
+
+
 class TestCloudUtils(unittest.TestCase):
     """
     Class for testing rhsmlib.cloud.utils module
