@@ -24,6 +24,8 @@ except ImportError:
     import unittest
 
 from mock import patch, Mock
+import tempfile
+import time
 
 from rhsmlib.cloud.providers import aws, azure, gcp
 from rhsmlib.cloud.utils import detect_cloud_provider
@@ -263,6 +265,8 @@ AWS_METADATA = """
   "version" : "2017-09-30"
 }
 """
+AWS_SIGNATURE = """ABCDEFGHIJKLMNOPQRSTUVWXYZa6UjgtcnXJOmOKZ8vM8ZgKlWr2yO4MjFUagnFHzQGw4wFDCvlJ
+ABCDEFGHIJKLMNOPQRSTUVWXZYs4lgt8fQLjdD6Ja9Pc7A0DqtVCYTTyn0tkVNKVYTjpmH5JJGEa"""
 
 AWS_TOKEN = "ABCDEFGHIJKLMNOPQRSTVWXYZabcdefghijklmnopqrstvwxyz0123=="
 
@@ -280,7 +284,82 @@ class TestAWSCollector(unittest.TestCase):
         self.requests_mock = requests_patcher.start()
         self.addCleanup(requests_patcher.stop)
 
+    @staticmethod
+    def get_only_imds_v2_is_supported(url, headers, *args, **kwargs):
+        """
+        Mock result, when we try to get metadata using GET method against
+        AWS metadata provider. This mock is for the case, when only IMDSv2
+        is supported by instance.
+        :param url: URL
+        :param headers: HTTP headers
+        :param args: other position argument
+        :param kwargs: other keyed argument
+        :return: Mock with result
+        """
+        if 'X-aws-ec2-metadata-token' in headers.keys():
+            if headers['X-aws-ec2-metadata-token'] == AWS_TOKEN:
+                if url == aws.AWSCloudCollector.CLOUD_PROVIDER_METADATA_URL:
+                    mock_result = Mock()
+                    mock_result.status_code = 200
+                    mock_result.text = AWS_METADATA
+                elif url == aws.AWSCloudCollector.CLOUD_PROVIDER_SIGNATURE_URL:
+                    mock_result = Mock()
+                    mock_result.status_code = 200
+                    mock_result.text = AWS_SIGNATURE
+                else:
+                    mock_result = Mock()
+                    mock_result.status_code = 400
+                    mock_result.text = 'Error: Invalid URL'
+            else:
+                mock_result = Mock()
+                mock_result.status_code = 400
+                mock_result.text = 'Error: Invalid metadata token provided'
+        else:
+            mock_result = Mock()
+            mock_result.status_code = 400
+            mock_result.text = 'Error: IMDSv1 is not supported on this instance'
+        return mock_result
+
+    @staticmethod
+    def put_imds_v2_token(url, headers, *args, **kwargs):
+        """
+        Mock getting metadata token using PUT method against AWS metadata provider
+        :param url: URL
+        :param headers: HTTP header
+        :param args: other position arguments
+        :param kwargs: other keyed arguments
+        :return: Mock with response
+        """
+        if url == aws.AWSCloudCollector.CLOUD_PROVIDER_TOKEN_URL:
+            if 'X-aws-ec2-metadata-token-ttl-seconds' in headers:
+                mock_result = Mock()
+                mock_result.status_code = 200
+                mock_result.text = AWS_TOKEN
+            else:
+                mock_result = Mock()
+                mock_result.status_code = 400
+                mock_result.text = 'Error: TTL for token not specified'
+        else:
+            mock_result = Mock()
+            mock_result.status_code = 400
+            mock_result.text = 'Error: Invalid URL'
+        return mock_result
+
     def test_get_metadata_from_server_imds_v1(self):
+        """
+        Test the case, when metadata are obtained from server using IMDSv1
+        """
+        mock_result = Mock()
+        mock_result.status_code = 200
+        mock_result.text = AWS_SIGNATURE
+        self.requests_mock.get = Mock(return_value=mock_result)
+        aws_collector = aws.AWSCloudCollector()
+        # Mock that no metadata cache exists
+        aws_collector._get_signature_from_cache = Mock(return_value=None)
+        metadata = aws_collector.get_signature()
+        self.assertEqual(metadata, AWS_SIGNATURE)
+
+    def test_get_signature_from_server_imds_v1(self):
         """
         Test the case, when metadata are obtained from server using IMDSv1
         """
@@ -298,64 +377,8 @@ class TestAWSCollector(unittest.TestCase):
         """
         Test the case, when metadata are obtained from server using IMDSv2
         """
-
-        def get_only_imds_v2_is_supported(url, headers, *args, **kwargs):
-            """
-            Mock result, when we try to get metadata using GET method against
-            AWS metadata provider. This mock is for the case, when only IMDSv2
-            is supported by instance.
-            :param url: URL
-            :param headers: HTTP headers
-            :param args: other position argument
-            :param kwargs: other keyed argument
-            :return: Mock with result
-            """
-            if url == aws.AWSCloudCollector.CLOUD_PROVIDER_METADATA_URL:
-                if 'X-aws-ec2-metadata-token' in headers.keys():
-                    if headers['X-aws-ec2-metadata-token'] == AWS_TOKEN:
-                        mock_result = Mock()
-                        mock_result.status_code = 200
-                        mock_result.text = AWS_METADATA
-                    else:
-                        mock_result = Mock()
-                        mock_result.status_code = 400
-                        mock_result.text = 'Error: Invalid metadata token provided'
-                else:
-                    mock_result = Mock()
-                    mock_result.status_code = 400
-                    mock_result.text = 'Error: IMDSv1 is not supported on this instance'
-            else:
-                mock_result = Mock()
-                mock_result.status_code = 400
-                mock_result.text = 'Error: Invalid URL'
-            return mock_result
-
-        def put_imds_v2_token(url, headers, *args, **kwargs):
-            """
-            Mock getting metadata token using PUT method against AWS metadata provider
-            :param url: URL
-            :param headers: HTTP header
-            :param args: other position arguments
-            :param kwargs: other keyed arguments
-            :return: Mock with response
-            """
-            if url == aws.AWSCloudCollector.CLOUD_PROVIDER_TOKEN_URL:
-                if 'X-aws-ec2-metadata-token-ttl-seconds' in headers:
-                    mock_result = Mock()
-                    mock_result.status_code = 200
-                    mock_result.text = AWS_TOKEN
-                else:
-                    mock_result = Mock()
-                    mock_result.status_code = 400
-                    mock_result.text = 'Error: TTL for token not specified'
-            else:
-                mock_result = Mock()
-                mock_result.status_code = 400
-                mock_result.text = 'Error: Invalid URL'
-            return mock_result
-
-        self.requests_mock.get = get_only_imds_v2_is_supported
-        self.requests_mock.put = put_imds_v2_token
+        self.requests_mock.get = self.get_only_imds_v2_is_supported
+        self.requests_mock.put = self.put_imds_v2_token
 
         aws_collector = aws.AWSCloudCollector()
         # Mock that no metadata cache exists
@@ -367,6 +390,130 @@ class TestAWSCollector(unittest.TestCase):
 
         metadata = aws_collector.get_metadata()
         self.assertEqual(metadata, AWS_METADATA)
+
+    def test_get_signature_from_server_imds2(self):
+        """
+        Test the case, when signature is obtained from server using IMDSv2
+        """
+        self.requests_mock.get = self.get_only_imds_v2_is_supported
+        self.requests_mock.put = self.put_imds_v2_token
+
+        aws_collector = aws.AWSCloudCollector()
+        # Mock that no metadata cache exists
+        aws_collector._get_metadata_from_cache = Mock(return_value=None)
+        # Mock that no token cache exists
+        aws_collector._get_token_from_cache_file = Mock(return_value=None)
+        # Mock writing token to cache file
+        aws_collector._write_token_to_cache_file = Mock()
+
+        signature = aws_collector.get_signature()
+        self.assertEqual(signature, AWS_SIGNATURE)
+
+    def test_reading_valid_cached_token(self):
+        """
+        Test reading of valid cached token from file
+        """
+        c_time = str(time.time())
+        token = 'ABCDEFGHy0hY_y8D7e95IIx7aP2bmnzddz0tIV56yZY9oK00F8GUPQ=='
+        valid_token = '{\
+  "ctime": "' + c_time + '",\
+  "token": "' + token + '"\
+}'
+        aws_collector = aws.AWSCloudCollector()
+        # Create mock of cached toke file
+        with tempfile.NamedTemporaryFile() as tmp_token_file:
+            # Create valid token file
+            tmp_token_file.write(bytes(valid_token, encoding='utf-8'))
+            tmp_token_file.flush()
+            old_token_cache_file = aws_collector.TOKEN_CACHE_FILE
+            aws_collector.TOKEN_CACHE_FILE = tmp_token_file.name
+            test_token = aws_collector._get_token_from_cache_file()
+            self.assertEqual(token, test_token)
+            aws_collector.TOKEN_CACHE_FILE = old_token_cache_file
+
+    def test_reading_invalid_cached_token_corrupted_json_file(self):
+        """
+        Test reading of corrupted cached token from file
+        """
+        c_time = str(time.time())
+        token = 'ABCDEFGHy0hY_y8D7e95IIx7aP2bmnzddz0tIV56yZY9oK00F8GUPQ=='
+        valid_token = '{[\
+  "ctime": "' + c_time + '",\
+  "token": "' + token + '"\
+}]'
+        aws_collector = aws.AWSCloudCollector()
+        # Create mock of cached toke file
+        with tempfile.NamedTemporaryFile() as tmp_token_file:
+            # Create valid token file
+            tmp_token_file.write(bytes(valid_token, encoding='utf-8'))
+            tmp_token_file.flush()
+            old_token_cache_file = aws_collector.TOKEN_CACHE_FILE
+            aws_collector.TOKEN_CACHE_FILE = tmp_token_file.name
+            test_token = aws_collector._get_token_from_cache_file()
+            self.assertEqual(test_token, None)
+            aws_collector.TOKEN_CACHE_FILE = old_token_cache_file
+
+    def test_reading_invalid_cached_token_wrong_ctime_format(self):
+        """
+        Test reading of cached token from file with invalid time format
+        """
+        token = 'ABCDEFGHy0hY_y8D7e95IIx7aP2bmnzddz0tIV56yZY9oK00F8GUPQ=='
+        # ctime has to be float (unix epoch)
+        valid_token = '{[\
+  "ctime": "Wed Dec 16 16:31:36 CET 2020",\
+  "token": "' + token + '"\
+}]'
+        aws_collector = aws.AWSCloudCollector()
+        # Create mock of cached toke file
+        with tempfile.NamedTemporaryFile() as tmp_token_file:
+            # Create valid token file
+            tmp_token_file.write(bytes(valid_token, encoding='utf-8'))
+            tmp_token_file.flush()
+            old_token_cache_file = aws_collector.TOKEN_CACHE_FILE
+            aws_collector.TOKEN_CACHE_FILE = tmp_token_file.name
+            test_token = aws_collector._get_token_from_cache_file()
+            self.assertEqual(test_token, None)
+            aws_collector.TOKEN_CACHE_FILE = old_token_cache_file
+
+    def test_reading_invalid_cached_token_missing_key(self):
+        """
+        Test reading of invalid cached token from file
+        """
+        valid_token = '{\
+  "token": "ABCDEFGHy0hY_y8D7e95IIx7aP2bmnzddz0tIV56yZY9oK00F8GUPQ=="\
+}'
+        aws_collector = aws.AWSCloudCollector()
+        # Create mock of cached toke file
+        with tempfile.NamedTemporaryFile() as tmp_token_file:
+            # Create valid token file
+            tmp_token_file.write(bytes(valid_token, encoding='utf-8'))
+            tmp_token_file.flush()
+            old_token_cache_file = aws_collector.TOKEN_CACHE_FILE
+            aws_collector.TOKEN_CACHE_FILE = tmp_token_file.name
+            test_token = aws_collector._get_token_from_cache_file()
+            self.assertEqual(test_token, None)
+            aws_collector.TOKEN_CACHE_FILE = old_token_cache_file
+
+    def test_reading_timed_out_cached_token(self):
+        """
+        Test reading of cached token from file that is timed out
+        """
+        c_time = str(time.time() - aws.AWSCloudCollector.CLOUD_PROVIDER_TOKEN_TTL - 10)
+        valid_token = '{\
+  "ctime": "' + c_time + '",\
+  "token": "ABCDEFGHy0hY_y8D7e95IIx7aP2bmnzddz0tIV56yZY9oK00F8GUPQ=="\
+}'
+        aws_collector = aws.AWSCloudCollector()
+        # Create mock of cached toke file
+        with tempfile.NamedTemporaryFile() as tmp_token_file:
+            # Create valid token file
+            tmp_token_file.write(bytes(valid_token, encoding='utf-8'))
+            tmp_token_file.flush()
+            old_token_cache_file = aws_collector.TOKEN_CACHE_FILE
+            aws_collector.TOKEN_CACHE_FILE = tmp_token_file.name
+            test_token = aws_collector._get_token_from_cache_file()
+            self.assertEqual(test_token, None)
+            aws_collector.TOKEN_CACHE_FILE = old_token_cache_file
 
 
 class TestCloudUtils(unittest.TestCase):

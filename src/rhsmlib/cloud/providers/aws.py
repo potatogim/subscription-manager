@@ -217,17 +217,17 @@ class AWSCloudCollector(CloudCollector):
         The cache file can be read only by owner.
         :return: String with token or None, when it possible to load token from cache file
         """
-        log.debug(f'Reading cache file with AWS token {self.TOKEN_CACHE_FILE}')
+        log.debug(f'Reading cache file with AWS token: {self.TOKEN_CACHE_FILE}')
 
         if not os.path.exists(self.TOKEN_CACHE_FILE):
-            log.debug(f'Cache file {self.TOKEN_CACHE_FILE} with AWS token does not exist')
+            log.debug(f'Cache file: {self.TOKEN_CACHE_FILE} with AWS token does not exist')
             return None
 
         with open(self.TOKEN_CACHE_FILE, "r") as token_cache_file:
             try:
                 cache_file_content = token_cache_file.read()
             except OSError as err:
-                log.error('Unable to load token cache file')
+                log.error(f'Unable to load token cache file: {self.TOKEN_CACHE_FILE}: {err}')
                 return None
         try:
             cache = json.loads(cache_file_content)
@@ -250,9 +250,10 @@ class AWSCloudCollector(CloudCollector):
             self._token_ctime = ctime
 
         if time.time() < ctime + self.CLOUD_PROVIDER_TOKEN_TTL:
+            log.debug(f'Cache file: {self.TOKEN_CACHE_FILE} with AWS token read successfully')
             return cache['token']
         else:
-            log.debug(f'Cache file AWS token file {self.TOKEN_CACHE_FILE} timed out')
+            log.debug(f'Cache file with AWS token file: {self.TOKEN_CACHE_FILE} timed out')
             return None
 
     def _get_token_from_server(self) -> Union[str, None]:
