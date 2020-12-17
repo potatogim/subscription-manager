@@ -18,7 +18,17 @@
 This is module implementing detector and metadata collector of virtual machine running on Azure
 """
 
+import requests
+import logging
+
+from typing import Union
+
+
 from rhsmlib.cloud.detector import CloudDetector
+from rhsmlib.cloud.collector import CloudCollector
+
+
+log = logging.getLogger(__name__)
 
 
 class AzureCloudDetector(CloudDetector):
@@ -94,9 +104,116 @@ class AzureCloudDetector(CloudDetector):
         return probability
 
 
-# Some temporary smoke testing code. You can test this module using:
-# sudo PYTHONPATH=./src:./syspurse/src python3 -m rhsmlib.cloud.providers.azure
-if __name__ == '__main__':
+class AzureCloudCollector(CloudCollector):
+    """
+    Collector of Azure metadata
+    """
+
+    # Microsoft adds new API versions very often, but old versions are supported
+    # for very long time
+    API_VERSION = "2020-09-01"
+
+    CLOUD_PROVIDER_METADATA_URL = "http://169.254.169.254/metadata/instance?api-version=" + API_VERSION
+
+    CLOUD_PROVIDER_METADATA_TYPE = "application/json"
+
+    CLOUD_PROVIDER_SIGNATURE_URL = "http://169.254.169.254/metadata/attested/document?api-version=" + API_VERSION
+
+    CLOUD_PROVIDER_SIGNATURE_TYPE = "application/json"
+
+    METADATA_CACHE_FILE = None
+
+    SIGNATURE_CACHE_FILE = None
+
+    HTTP_HEADERS = {
+        'user-agent': 'RHSM/1.0',
+        "Metadata": "true",
+    }
+
+    def __init__(self):
+        """
+        Initialization of azure cloud collector
+        """
+        super(AzureCloudCollector, self).__init__()
+
+    def _get_metadata_from_cache(self) -> Union[str, None]:
+        """
+        Try to get metadata from cache
+        :return: String with metadata or None
+        """
+        return None
+
+    def _get_metadata_from_server(self) -> Union[str, None]:
+        """
+        Try to get metadata from server
+        :return: String with metadata or None
+        """
+        log.debug(f'Trying to get metadata from {self.CLOUD_PROVIDER_METADATA_URL}')
+
+        try:
+            response = requests.get(self.CLOUD_PROVIDER_METADATA_URL, headers=self.HTTP_HEADERS)
+        except requests.ConnectionError as err:
+            log.debug(f'Unable to get Azure metadata: {err}')
+        else:
+            if response.status_code == 200:
+                return response.text
+            else:
+                log.debug(f'Unable to get Azure metadata: {response.status_code}')
+
+    def _get_signature_from_cache_file(self) -> Union[str, None]:
+        """
+        Try to get signature from cache file
+        :return: String containing signature or None
+        """
+        return None
+
+    def _get_signature_from_server(self) -> Union[str, None]:
+        """
+        Method for gathering signature of metadata from server
+        :return: String containing signature or None
+        """
+        signature = self._get_signature_from_cache_file()
+
+        if signature is None:
+            signature = self._get_signature_from_server()
+
+        return signature
+
+    def get_signature(self) -> Union[str, None]:
+        """
+        Public method for getting signature (cache file or server)
+        :return: String containing signature or None
+        """
+        log.debug(f'Trying to get signature from {self.CLOUD_PROVIDER_SIGNATURE_URL}')
+
+        try:
+            response = requests.get(self.CLOUD_PROVIDER_SIGNATURE_URL, headers=self.HTTP_HEADERS)
+        except requests.ConnectionError as err:
+            log.debug(f'Unable to get Azure signature: {err}')
+        else:
+            if response.status_code == 200:
+                return response.text
+            else:
+                log.debug(f'Unable to get Azure signature: {response.status_code}')
+
+    def get_metadata(self) -> Union[str, None]:
+        """
+        Public method for getting metadata (cache file or server)
+        :return: String containing metadata or None
+        """
+        metadata = self._get_metadata_from_cache()
+
+        if metadata is not None:
+            return metadata
+
+        return self._get_metadata_from_server()
+
+
+def _smoke_tests():
+    """
+    Simple smoke test of azure detector and collector
+    :return: None
+    """
     # Gather only information about hardware and virtualization
     from rhsmlib.facts.host_collector import HostCollector
     from rhsmlib.facts.hwprobe import HardwareCollector
@@ -107,3 +224,16 @@ if __name__ == '__main__':
     _result = _azure_cloud_detector.is_running_on_cloud()
     _probability = _azure_cloud_detector.is_likely_running_on_cloud()
     print('>>> debug <<< result: %s, %6.3f' % (_result, _probability))
+
+    if _result is True:
+        azure_cloud_collector = AzureCloudCollector()
+        metadata = azure_cloud_collector.get_metadata()
+        signature = azure_cloud_collector.get_signature()
+        print(f'>>> debug <<< metadata: {metadata}')
+        print(f'>>> debug <<< signature: {signature}')
+
+
+# Some temporary smoke testing code. You can test this module using:
+# sudo PYTHONPATH=./src:./syspurse/src python3 -m rhsmlib.cloud.providers.azure
+if __name__ == '__main__':
+    _smoke_tests()
