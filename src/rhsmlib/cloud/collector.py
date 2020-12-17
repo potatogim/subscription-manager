@@ -18,6 +18,12 @@
 This module implements base class for collecting metadata from cloud provider
 """
 
+import requests
+import logging
+
+
+log = logging.getLogger(__name__)
+
 
 class CloudCollector(object):
     """
@@ -61,6 +67,9 @@ class CloudCollector(object):
     # (e.g. /var/lib/rhsm/cache/cool_cloud_signature.json)
     SIGNATURE_CACHE_FILE = None
 
+    # Custom HTTP headers like user-agent
+    HTTP_HEADERS = {}
+
     def __init__(self):
         """
         Initialize instance of CloudCollector
@@ -75,12 +84,31 @@ class CloudCollector(object):
         """
         raise NotImplementedError
 
+    def _get_data_from_server(self, data_type, url):
+        """
+        Try to get some data from server using method GET
+        :data_type: string representing data type (metadata, signature, token)
+        :param url: URL of the GET request
+        :return: String representing body, when status code is 200; Otherwise return None
+        """
+        log.debug(f'Trying to get {data_type} from {url}')
+
+        try:
+            response = requests.get(url, headers=self.HTTP_HEADERS)
+        except requests.ConnectionError as err:
+            log.debug(f'Unable to get {self.CLOUD_PROVIDER_ID} {data_type}: {err}')
+        else:
+            if response.status_code == 200:
+                return response.text
+            else:
+                log.debug(f'Unable to get {self.CLOUD_PROVIDER_ID} {data_type}: {response.status_code}')
+
     def _get_metadata_from_server(self):
         """
         Method for gathering metadata from server
-        :return: string containing metadata
+        :return: String containing metadata or None
         """
-        raise NotImplementedError
+        return self._get_data_from_server("metadata", self.CLOUD_PROVIDER_METADATA_URL)
 
     def _get_signature_from_cache_file(self):
         """
@@ -92,20 +120,30 @@ class CloudCollector(object):
     def _get_signature_from_server(self):
         """
         Method for gathering signature of metadata from server
-        :return:
+        :return: String containing signature or None
         """
-        raise NotImplementedError
+        return self._get_data_from_server("signature", self.CLOUD_PROVIDER_SIGNATURE_URL)
 
     def get_signature(self):
         """
         Public method for getting signature (cache file or server)
         :return:
         """
-        raise NotImplementedError
+        signature = self._get_signature_from_cache_file()
+
+        if signature is None:
+            signature = self._get_signature_from_server()
+
+        return signature
 
     def get_metadata(self):
         """
         Public method for getting metadata (cache file or server)
         :return:
         """
-        raise NotImplementedError
+        metadata = self._get_metadata_from_cache()
+
+        if metadata is not None:
+            return metadata
+
+        return self._get_metadata_from_server()

@@ -138,8 +138,8 @@ class AzureCloudCollector(CloudCollector):
 
     def _get_metadata_from_cache(self) -> Union[str, None]:
         """
-        Try to get metadata from cache
-        :return: String with metadata or None
+        It is not safe to use cache of metadata for Azure cloud provider
+        :return: None
         """
         return None
 
@@ -148,22 +148,12 @@ class AzureCloudCollector(CloudCollector):
         Try to get metadata from server
         :return: String with metadata or None
         """
-        log.debug(f'Trying to get metadata from {self.CLOUD_PROVIDER_METADATA_URL}')
-
-        try:
-            response = requests.get(self.CLOUD_PROVIDER_METADATA_URL, headers=self.HTTP_HEADERS)
-        except requests.ConnectionError as err:
-            log.debug(f'Unable to get Azure metadata: {err}')
-        else:
-            if response.status_code == 200:
-                return response.text
-            else:
-                log.debug(f'Unable to get Azure metadata: {response.status_code}')
+        return super(AzureCloudCollector, self)._get_metadata_from_server()
 
     def _get_signature_from_cache_file(self) -> Union[str, None]:
         """
-        Try to get signature from cache file
-        :return: String containing signature or None
+        It is not safe to use cache of signature for Azure cloud provider
+        :return: None
         """
         return None
 
@@ -172,41 +162,21 @@ class AzureCloudCollector(CloudCollector):
         Method for gathering signature of metadata from server
         :return: String containing signature or None
         """
-        signature = self._get_signature_from_cache_file()
-
-        if signature is None:
-            signature = self._get_signature_from_server()
-
-        return signature
+        return super(AzureCloudCollector, self)._get_signature_from_server()
 
     def get_signature(self) -> Union[str, None]:
         """
         Public method for getting signature (cache file or server)
         :return: String containing signature or None
         """
-        log.debug(f'Trying to get signature from {self.CLOUD_PROVIDER_SIGNATURE_URL}')
-
-        try:
-            response = requests.get(self.CLOUD_PROVIDER_SIGNATURE_URL, headers=self.HTTP_HEADERS)
-        except requests.ConnectionError as err:
-            log.debug(f'Unable to get Azure signature: {err}')
-        else:
-            if response.status_code == 200:
-                return response.text
-            else:
-                log.debug(f'Unable to get Azure signature: {response.status_code}')
+        return super(AzureCloudCollector, self).get_signature()
 
     def get_metadata(self) -> Union[str, None]:
         """
         Public method for getting metadata (cache file or server)
         :return: String containing metadata or None
         """
-        metadata = self._get_metadata_from_cache()
-
-        if metadata is not None:
-            return metadata
-
-        return self._get_metadata_from_server()
+        return super(AzureCloudCollector, self).get_metadata()
 
 
 def _smoke_tests():
