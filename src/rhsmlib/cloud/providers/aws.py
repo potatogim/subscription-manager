@@ -139,7 +139,7 @@ class AWSCloudCollector(CloudCollector):
 
     CLOUD_PROVIDER_TOKEN_TTL = 360  # the value is in seconds
 
-    CLOUD_PROVIDER_SIGNATURE_URL = "http://169.254.169.254/latest/dynamic/instance-identity/signature"
+    CLOUD_PROVIDER_SIGNATURE_URL = "http://169.254.169.254/latest/dynamic/instance-identity/rsa2048"
 
     CLOUD_PROVIDER_SIGNATURE_TYPE = "text/plain"
 
@@ -431,10 +431,13 @@ class AWSCloudCollector(CloudCollector):
         """
         signature = self._get_signature_from_server_imds_v1()
 
-        if signature is not None:
-            return signature
+        if signature is None:
+            signature = self._get_signature_from_server_imds_v2()
 
-        return self._get_signature_from_server_imds_v2()
+        signature = f'-----BEGIN PKCS7-----\n{signature}\n-----END PKCS7-----'
+
+        return signature
+
 
     def get_metadata(self) -> Union[str, None]:
         """

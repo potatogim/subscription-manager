@@ -265,8 +265,26 @@ AWS_METADATA = """
   "version" : "2017-09-30"
 }
 """
-AWS_SIGNATURE = """ABCDEFGHIJKLMNOPQRSTUVWXYZa6UjgtcnXJOmOKZ8vM8ZgKlWr2yO4MjFUagnFHzQGw4wFDCvlJ
-ABCDEFGHIJKLMNOPQRSTUVWXZYs4lgt8fQLjdD6Ja9Pc7A0DqtVCYTTyn0tkVNKVYTjpmH5JJGEa"""
+
+AWS_SIGNATURE = """ABCDEFGHIJKLMNOPQRSTVWXYZabcdefghijklmnopqrstvwxyz01234567899w0BBwGggCSABIIB
+73sKICAiYWNjb3VudElkIiA6ICI1NjcwMTQ3ODY4OTAiLAogICJhcmNoaXRlY3R1cmUiIDogIng4
+Nl82NCIsCiAgImF2YWlsYWJpbGl0eVpvbmUiIDogImV1LWNlbnRyYWwtMWIiLAogICJiaWxsaW5n
+UHJvZHVjdHMiIDogWyAiYnAtNmZhNTQwMDYiIF0sCiAgImRldnBheVByb2R1Y3RDb2RlcyIgOiBu
+73sKICAiYWNjb3VudElkIiA6ICI1NjcwMTQ3ODY4OTAiLAogICJhcmNoaXRlY3R1cmUiIDogIng4
+bWktMDgxNmFkNzYyOTc2YzM1ZGIiLAogICJpbnN0YW5jZUlkIiA6ICJpLTBkNTU0YzRmM2JhNWVl
+YTczIiwKICAiaW5zdGFuY2VUeXBlIiA6ICJtNS5sYXJnZSIsCiAgImtlcm5lbElkIiA6IG51bGws
+CiAgInBlbmRpbmdUaW1lIiA6ICIyMDIwLTA0LTI0VDE0OjU3OjQzWiIsCiAgInByaXZhdGVJcCIg
+OiAiMTcyLjMxLjExLjc4IiwKICAicmFtZGlza0lkIiA6IG51bGwsCiAgInJlZ2lvbiIgOiAiZXUt
+Y2VudHJhbC0xIiwKICAidmVyc2lvbiIgOiAiMjAxNy0wOS0zMCIKfQAAAAAAADGCAf8wggH7AgEB
+CiAgInBlbmRpbmdUaW1lIiA6ICIyMDIwLTA0LTI0VDE0OjU3OjQzWiIsCiAgInByaXZhdGVJcCIg
+YXR0bGUxIDAeBgNVBAoTF0FtYXpvbiBXZWIgU2VydmljZXMgTExDAgkAoP6/ot5H9aswDQYJYIZI
+AWUDBAIBBQCgaTAYBgkqhkiG9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yMDA5
+MDExNTMyNDhaMC8GCSqGSIb3DQEJBDEiBCCmizT0hDlJmxHtDBaEjql5ZPFaoKy6OSk7qBFREVRk
+iTANBgkqhkiG9w0BAQEFAASCAQAh//5+AaFAcgw/5SoglQ27kQKuThcJYa+QhC2aw4n1GvkvCmyi
+helVMxH33tB9tUei/mapSF3v8jUseRLEbcDVRHf6n6h14Qj2MxtgYanzUCDF8qECYbZ2uSy3JLEP
+iNsndm8nt7XcJC7NRoWJWAsly1VeXVIauA/l7uXmUarDQs5BhFYl7REX4htxg9mCibR6xqU5i8/D
+iTANBgkqhkiG9w0BAQEFAASCAQAh//5+AaFAcgw/5SoglQ27kQKuThcJYa+QhC2aw4n1GvkvCmyi
+tGbafapTj+6KnJAfP0sW7ZbzKclaCPHXQ37z9mc8vtCxEQmCbGL6sj2wtpi4rmRlAAAAAAAA"""
 
 AWS_TOKEN = "ABCDEFGHIJKLMNOPQRSTVWXYZabcdefghijklmnopqrstvwxyz0123=="
 
@@ -351,20 +369,6 @@ class TestAWSCollector(unittest.TestCase):
         """
         mock_result = Mock()
         mock_result.status_code = 200
-        mock_result.text = AWS_SIGNATURE
-        self.requests_mock.get = Mock(return_value=mock_result)
-        aws_collector = aws.AWSCloudCollector()
-        # Mock that no metadata cache exists
-        aws_collector._get_signature_from_cache = Mock(return_value=None)
-        metadata = aws_collector.get_signature()
-        self.assertEqual(metadata, AWS_SIGNATURE)
-
-    def test_get_signature_from_server_imds_v1(self):
-        """
-        Test the case, when metadata are obtained from server using IMDSv1
-        """
-        mock_result = Mock()
-        mock_result.status_code = 200
         mock_result.text = AWS_METADATA
         self.requests_mock.get = Mock(return_value=mock_result)
         aws_collector = aws.AWSCloudCollector()
@@ -372,6 +376,21 @@ class TestAWSCollector(unittest.TestCase):
         aws_collector._get_metadata_from_cache = Mock(return_value=None)
         metadata = aws_collector.get_metadata()
         self.assertEqual(metadata, AWS_METADATA)
+
+    def test_get_signature_from_server_imds_v1(self):
+        """
+        Test the case, when metadata are obtained from server using IMDSv1
+        """
+        mock_result = Mock()
+        mock_result.status_code = 200
+        mock_result.text = AWS_SIGNATURE
+        self.requests_mock.get = Mock(return_value=mock_result)
+        aws_collector = aws.AWSCloudCollector()
+        # Mock that no metadata cache exists
+        aws_collector._get_signature_from_cache = Mock(return_value=None)
+        test_signature = aws_collector.get_signature()
+        signature = '-----BEGIN PKCS7-----\n' + AWS_SIGNATURE + '\n-----END PKCS7-----'
+        self.assertEqual(signature, test_signature)
 
     def test_get_metadata_from_server_imds2(self):
         """
@@ -406,8 +425,9 @@ class TestAWSCollector(unittest.TestCase):
         # Mock writing token to cache file
         aws_collector._write_token_to_cache_file = Mock()
 
-        signature = aws_collector.get_signature()
-        self.assertEqual(signature, AWS_SIGNATURE)
+        test_signature = aws_collector.get_signature()
+        signature = '-----BEGIN PKCS7-----\n' + AWS_SIGNATURE + '\n-----END PKCS7-----'
+        self.assertEqual(signature, test_signature)
 
     def test_reading_valid_cached_token(self):
         """
