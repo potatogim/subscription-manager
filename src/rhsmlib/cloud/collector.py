@@ -30,18 +30,15 @@ class CloudCollector(object):
     Base class for collecting metadata and signature of metadata from cloud
     provider. The most of logic is implemented in this class. Subclasses
     for concrete cloud providers usually contains only default values in
-    class attributes. All values will be usually loaded from configuration
-    files of cloud providers. It is/will be still possible to implement
-    custom method for e.g. getting metadata from cloud provider.
+    class attributes. Logic of gathering metadata/signature will be implemented
+    in this base class and subclasses will need to set only class attributes.
+    It will be still possible to implement custom method for e.g. getting
+    metadata from cloud provider.
     """
 
     # Unique ID of cloud provider
     # (e.g. "aws", "azure", "gcp", etc.)
     CLOUD_PROVIDER_ID = None
-
-    # Path to configuration file of collector (ini file)
-    # (e.g. /etc/rhsm/cloud_providers/cool_cloud.conf
-    COLLECTOR_CONF_FILE = None
 
     # Default value of server URL providing metadata
     # (e.g. http://1.2.3.4./path/to/metadata/document)

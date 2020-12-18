@@ -104,7 +104,29 @@ class GCPCloudCollector(CloudCollector):
 
     CLOUD_PROVIDER_ID = "gcp"
 
-    CLOUD_PROVIDER_METADATA_URL = ""
+    # The "audience" should be some unique URI agreed upon by both the instance and the system verifying
+    # the instance's identity. For example, the audience could be a URL for the connection between the two systems.
+    # But it can be anything.
+    AUDIENCE = "RHSM/1.0"
+
+    CLOUD_PROVIDER_METADATA_URL = f"http://metadata/computeMetadata/v1/instance/service-accounts/default/identity?audience={AUDIENCE}&format=full"
+
+    CLOUD_PROVIDER_METADATA_TYPE = "text/html"
+
+    CLOUD_PROVIDER_SIGNATURE_URL = None
+
+    CLOUD_PROVIDER_SIGNATURE_TYPE = None
+
+    HTTP_HEADERS = {
+        'user-agent': 'RHSM/1.0',
+        'Metadata-Flavor': 'Google'
+    }
+
+    # It is not save cache file
+    METADATA_CACHE_FILE = None
+
+    # Nothing to cache for this cloud provider
+    SIGNATURE_CACHE_FILE = None
 
     def __init__(self):
         super(GCPCloudCollector, self).__init__()
@@ -119,16 +141,25 @@ class GCPCloudCollector(CloudCollector):
         super(GCPCloudCollector, self)._get_data_from_server(data_type, url)
 
     def _get_signature_from_server(self):
-        super(GCPCloudCollector, self)._get_signature_from_server()
+        """
+        Google returns everything in one file.
+        """
+        return None
 
     def _get_signature_from_cache_file(self):
+        """
+        Really no need to cache signature
+        """
         return None
 
     def get_signature(self):
-        super(GCPCloudCollector, self).get_signature()
+        """
+        Google returns everything in one file. No need to try to get signature
+        """
+        return None
 
     def get_metadata(self):
-        super(GCPCloudCollector, self).get_metadata()
+        return super(GCPCloudCollector, self).get_metadata()
 
 
 def _smoke_test():
@@ -138,13 +169,18 @@ def _smoke_test():
     # Gather only information about hardware and virtualization
     from rhsmlib.facts.host_collector import HostCollector
     from rhsmlib.facts.hwprobe import HardwareCollector
-    _facts = {}
-    _facts.update(HostCollector().get_all())
-    _facts.update(HardwareCollector().get_all())
-    _gcp_cloud_detector = GCPCloudDetector(_facts)
-    _result = _gcp_cloud_detector.is_running_on_cloud()
-    _probability = _gcp_cloud_detector.is_likely_running_on_cloud()
-    print('>>> debug <<< result: %s, %6.3f' % (_result, _probability))
+    facts = {}
+    facts.update(HostCollector().get_all())
+    facts.update(HardwareCollector().get_all())
+    gcp_cloud_detector = GCPCloudDetector(facts)
+    result = gcp_cloud_detector.is_running_on_cloud()
+    probability = gcp_cloud_detector.is_likely_running_on_cloud()
+    print('>>> debug <<< result: %s, %6.3f' % (result, probability))
+    if result is True:
+        gcp_cloud_collector = GCPCloudCollector()
+        token = gcp_cloud_collector.get_metadata()
+        print(f'>>> debug <<< token: {token}')
+
 
 # Some temporary smoke testing code. You can test this module using:
 # sudo PYTHONPATH=./src:./syspurse/src python3 -m rhsmlib.cloud.providers.gcp
