@@ -17,8 +17,12 @@
 """
 This is module implementing detector and metadata collector of virtual machine running on Google Cloud Platform
 """
+import logging
+
+from typing import Union
 
 from rhsmlib.cloud.detector import CloudDetector
+from rhsmlib.cloud.collector import CloudCollector
 
 
 class GCPCloudDetector(CloudDetector):
@@ -93,9 +97,44 @@ class GCPCloudDetector(CloudDetector):
         return probability
 
 
-# Some temporary smoke testing code. You can test this module using:
-# sudo PYTHONPATH=./src:./syspurse/src python3 -m rhsmlib.cloud.providers.gcp
-if __name__ == '__main__':
+class GCPCloudCollector(CloudCollector):
+    """
+    Collector of Google Cloud Platform metadata
+    """
+
+    CLOUD_PROVIDER_ID = "gcp"
+
+    CLOUD_PROVIDER_METADATA_URL = ""
+
+    def __init__(self):
+        super(GCPCloudCollector, self).__init__()
+
+    def _get_metadata_from_cache(self):
+        return None
+
+    def _get_metadata_from_server(self):
+        super(GCPCloudCollector, self)._get_metadata_from_server()
+
+    def _get_data_from_server(self, data_type, url):
+        super(GCPCloudCollector, self)._get_data_from_server(data_type, url)
+
+    def _get_signature_from_server(self):
+        super(GCPCloudCollector, self)._get_signature_from_server()
+
+    def _get_signature_from_cache_file(self):
+        return None
+
+    def get_signature(self):
+        super(GCPCloudCollector, self).get_signature()
+
+    def get_metadata(self):
+        super(GCPCloudCollector, self).get_metadata()
+
+
+def _smoke_test():
+    """
+    Simple smoke tests of GCP detector and collector
+    """
     # Gather only information about hardware and virtualization
     from rhsmlib.facts.host_collector import HostCollector
     from rhsmlib.facts.hwprobe import HardwareCollector
@@ -106,3 +145,8 @@ if __name__ == '__main__':
     _result = _gcp_cloud_detector.is_running_on_cloud()
     _probability = _gcp_cloud_detector.is_likely_running_on_cloud()
     print('>>> debug <<< result: %s, %6.3f' % (_result, _probability))
+
+# Some temporary smoke testing code. You can test this module using:
+# sudo PYTHONPATH=./src:./syspurse/src python3 -m rhsmlib.cloud.providers.gcp
+if __name__ == '__main__':
+    _smoke_test()

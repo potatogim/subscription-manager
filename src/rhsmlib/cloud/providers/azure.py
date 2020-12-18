@@ -18,11 +18,9 @@
 This is module implementing detector and metadata collector of virtual machine running on Azure
 """
 
-import requests
 import logging
 
 from typing import Union
-
 
 from rhsmlib.cloud.detector import CloudDetector
 from rhsmlib.cloud.collector import CloudCollector
@@ -110,7 +108,9 @@ class AzureCloudCollector(CloudCollector):
     """
 
     # Microsoft adds new API versions very often, but old versions are supported
-    # for very long time
+    # for very long time. It would be good to update the version from time to time,
+    # because old versions (three years) are deprecated. It would be good to update
+    # the API version with every minor version of RHEL
     API_VERSION = "2020-09-01"
 
     CLOUD_PROVIDER_METADATA_URL = "http://169.254.169.254/metadata/instance?api-version=" + API_VERSION
@@ -125,6 +125,7 @@ class AzureCloudCollector(CloudCollector):
 
     SIGNATURE_CACHE_FILE = None
 
+    # HTTP header "Metadata" has to be equal to "true" to be able to get metadata
     HTTP_HEADERS = {
         'user-agent': 'RHSM/1.0',
         "Metadata": "true",
@@ -142,6 +143,15 @@ class AzureCloudCollector(CloudCollector):
         :return: None
         """
         return None
+
+    def _get_data_from_server(self, data_type, url):
+        """
+        This method tries to get data from server using GET method
+        :param data_type: string representation of data type used in log messages (e.g. "metadata", "signature")
+        :param url: URL of GET request
+        :return: String of body, when request was successful; otherwise return None
+        """
+        return super(AzureCloudCollector, self)._get_data_from_server(data_type, url)
 
     def _get_metadata_from_server(self) -> Union[str, None]:
         """
