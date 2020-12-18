@@ -99,7 +99,9 @@ class GCPCloudDetector(CloudDetector):
 
 class GCPCloudCollector(CloudCollector):
     """
-    Collector of Google Cloud Platform metadata
+    Collector of Google Cloud Platform metadata. Verification of instance identity is described in this document:
+
+    https://cloud.google.com/compute/docs/instances/verifying-instance-identity
     """
 
     CLOUD_PROVIDER_ID = "gcp"
@@ -109,9 +111,13 @@ class GCPCloudCollector(CloudCollector):
     # But it can be anything.
     AUDIENCE = "RHSM/1.0"
 
+    # Google uses
     CLOUD_PROVIDER_METADATA_URL = f"http://metadata/computeMetadata/v1/instance/service-accounts/default/identity?audience={AUDIENCE}&format=full"
 
     CLOUD_PROVIDER_METADATA_TYPE = "text/html"
+
+    # Token
+    CLOUD_PROVIDER_METADATA_TTL = 3600
 
     CLOUD_PROVIDER_SIGNATURE_URL = None
 
@@ -131,14 +137,25 @@ class GCPCloudCollector(CloudCollector):
     def __init__(self):
         super(GCPCloudCollector, self).__init__()
 
-    def _get_metadata_from_cache(self):
+    def _get_metadata_from_cache(self) -> None:
+        """
+        It is not safe to cache metadata returned from server
+        :return: None
+        """
         return None
 
-    def _get_metadata_from_server(self):
-        super(GCPCloudCollector, self)._get_metadata_from_server()
+    def _get_data_from_server(self, data_type, url) -> Union[str, None]:
+        """
+        Try to get data from metadata server
+        """
+        return super(GCPCloudCollector, self)._get_data_from_server(data_type, url)
 
-    def _get_data_from_server(self, data_type, url):
-        super(GCPCloudCollector, self)._get_data_from_server(data_type, url)
+    def _get_metadata_from_server(self) -> Union[str, None]:
+        """
+        GCP metadata server returns only one file called token
+        :return: String with token or None
+        """
+        return self._get_data_from_server(data_type="token", url=self.CLOUD_PROVIDER_METADATA_URL)
 
     def _get_signature_from_server(self):
         """
@@ -161,6 +178,39 @@ class GCPCloudCollector(CloudCollector):
     def get_metadata(self):
         return super(GCPCloudCollector, self).get_metadata()
 
+# Note about GCP token
+# --------------------
+#
+# It is possible to verify token, but is not easy to do it on RHEL, because it requires
+# special Python packages that are not available on RHEL. It is recommended to create
+# virtual environment:
+#
+# $ python3 -m venv env
+#
+# Activate virtual environment:
+#
+# $ source env/bin/activate
+#
+# Install required packages:
+#
+# $ pip install --upgrade google-auth
+# $ pip install requests
+#
+# Run following Python script:
+#
+# ```python
+# from rhsmlib.cloud.providers.gcp import GCPCloudCollector
+# # Import libraries for token verification
+# import google.auth.transport.requests
+# from google.oauth2 import id_token
+# # Get token
+# token = GCPCloudCollector().get_metadata()
+# # Verify token signature and store the token payload
+# request = google.auth.transport.requests.Request()
+# payload = id_token.verify_token(token, request=request, audience=GCPCloudCollector.AUDIENCE)
+# print(payload)
+# ```
+
 
 def _smoke_test():
     """
@@ -169,6 +219,18 @@ def _smoke_test():
     # Gather only information about hardware and virtualization
     from rhsmlib.facts.host_collector import HostCollector
     from rhsmlib.facts.hwprobe import HardwareCollector
+
+    import sys
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    root.addHandler(handler)
+
     facts = {}
     facts.update(HostCollector().get_all())
     facts.update(HardwareCollector().get_all())
